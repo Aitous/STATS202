@@ -1,0 +1,31 @@
+                            OLS Regression Results                            
+==============================================================================
+Dep. Variable:            PANSS_Total   R-squared:                       0.340
+Model:                            OLS   Adj. R-squared:                  0.338
+Method:                 Least Squares   F-statistic:                     173.0
+Date:                Thu, 06 Aug 2020   Prob (F-statistic):          1.30e-119
+Time:                        12:04:54   Log-Likelihood:                -5538.6
+No. Observations:                1351   AIC:                         1.109e+04
+Df Residuals:                    1346   BIC:                         1.111e+04
+Df Model:                           4                                         
+Covariance Type:            nonrobust                                         
+==============================================================================
+                 coef    std err          t      P>|t|      [0.025      0.975]
+------------------------------------------------------------------------------
+const         90.8125      0.966     94.030      0.000      88.918      92.707
+x1            -0.3575      0.024    -14.645      0.000      -0.405      -0.310
+x2            -1.9269      0.595     -3.239      0.001      -3.094      -0.760
+x3             0.0010      0.000      8.524      0.000       0.001       0.001
+x4             0.0178      0.013      1.418      0.156      -0.007       0.042
+x5            -1.9269      0.595     -3.239      0.001      -3.094      -0.760
+==============================================================================
+Omnibus:                        2.589   Durbin-Watson:                   0.543
+Prob(Omnibus):                  0.274   Jarque-Bera (JB):                2.506
+Skew:                           0.063   Prob(JB):                        0.286
+Kurtosis:                       2.830   Cond. No.                     1.38e+20
+==============================================================================
+
+Warnings:
+[1] Standard Errors assume that the covariance matrix of the errors is correctly specified.
+[2] The smallest eigenvalue is 1.66e-29. This might indicate that there are
+strong multicollinearity problems or that the design matrix is singular.

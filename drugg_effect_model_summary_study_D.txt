@@ -1,0 +1,27 @@
+                            OLS Regression Results                            
+==============================================================================
+Dep. Variable:            PANSS_Total   R-squared:                       0.191
+Model:                            OLS   Adj. R-squared:                  0.184
+Method:                 Least Squares   F-statistic:                     25.90
+Date:                Thu, 06 Aug 2020   Prob (F-statistic):           4.56e-15
+Time:                        12:05:23   Log-Likelihood:                -1379.8
+No. Observations:                 333   AIC:                             2768.
+Df Residuals:                     329   BIC:                             2783.
+Df Model:                           3                                         
+Covariance Type:            nonrobust                                         
+====================================================================================
+                       coef    std err          t      P>|t|      [0.025      0.975]
+------------------------------------------------------------------------------------
+Intercept           72.8028      1.763     41.305      0.000      69.335      76.270
+VisitDay            -0.0920      0.022     -4.187      0.000      -0.135      -0.049
+TxGroup              5.2640      2.301      2.288      0.023       0.738       9.790
+VisitDay:TxGroup    -0.0273      0.027     -1.008      0.314      -0.081       0.026
+==============================================================================
+Omnibus:                        2.017   Durbin-Watson:                   1.151
+Prob(Omnibus):                  0.365   Jarque-Bera (JB):                1.719
+Skew:                          -0.033   Prob(JB):                        0.423
+Kurtosis:                       2.654   Cond. No.                         349.
+==============================================================================
+
+Warnings:
+[1] Standard Errors assume that the covariance matrix of the errors is correctly specified.
