@@ -159,7 +159,7 @@ def classify(studies):
     #SiteID effect on total score:
     kmeans(study, ['SiteID', 'PANSS_Total'], num_clusters = 4)
         
-def forecaste(studies, featToexclude):
+def forecast(studies, featToexclude):
     study = studies[0].sum_feat
     for st in studies[1:]:
         study = pd.concat([study, st.sum_feat])
@@ -226,31 +226,26 @@ def classification(studies, featToexclude):
     study = studies[0].sum_feat
     for st in studies[1:-1]:
         study = pd.concat([study, st.sum_feat])
-    sorted_data = study.sort_values(by = ['PatientID', 'VisitDay'])
-    train_X = sorted_data.loc[:,
-                 ~study.columns.isin(featToexclude)]
-    duplicate = train_X.duplicated(keep='last', subset=['PatientID'])  
-    train_X = train_X[duplicate == True]
+    train_X = study.loc[:, ~study.columns.isin(featToexclude)]
     
-    train_y = sorted_data[[target, 'PatientID']]
-    duplicate = train_y.duplicated(keep='first', subset=['PatientID'])  
-    train_y = train_y[duplicate == True]
+    train_y = study[[target, 'PatientID']]
     
     duplicate = train_X.duplicated(keep='last', subset=['PatientID'])  
     test_X = train_X[duplicate == False]
     train_X = train_X[duplicate == True]
     
-    duplicate = train_y.duplicated(keep='first', subset=['PatientID'])  
+    duplicate = train_y.duplicated(keep='last', subset=['PatientID'])  
     test_y = train_y[duplicate == False]
     train_y = train_y[duplicate == True]
+    
     lb = LabelEncoder()
     train_y[target] = lb.fit_transform(train_y[target])
     test_y[target]  = lb.fit_transform(test_y[target])
     
-    train_X.drop(['PatientID', 'LeadStatus'], axis=1, inplace = True)
-    train_y.drop(['PatientID'], axis=1, inplace = True)
-    test_X.drop(['PatientID', 'LeadStatus'], axis=1, inplace = True)
-    test_y.drop(['PatientID'], axis=1, inplace = True)
+    train_X.drop(['PatientID', 'AssessmentID', 'LeadStatus'], axis=1, inplace = True)
+    test_X.drop(['PatientID', 'AssessmentID', 'LeadStatus'], axis=1, inplace = True)
+    train_y.drop('PatientID', axis=1, inplace = True)
+    test_y.drop('PatientID', axis=1, inplace = True)
     
     xgbc = xgb.XGBClassifier(objective='multi:softmax')
     xgbc.fit(train_X, train_y.values)
@@ -258,11 +253,9 @@ def classification(studies, featToexclude):
           
     #testing on Study_E:
     studyE = studies[-1].sum_feat
-    sorted_data = studyE.sort_values(by = ['PatientID', 'VisitDay'])
-    test_X_E = sorted_data.loc[:, ~studyE.columns.isin(featToexclude)]
-    test_X_E.drop_duplicates(keep='last', subset=['PatientID'], inplace= True) 
-    patientsID_E = test_X_E["PatientID"]
-    test_X_E.drop('PatientID', axis=1, inplace = True)
+    test_X_E = studyE.loc[:, ~studyE.columns.isin(featToexclude)]
+    AssessmentID = studyE['AssessmentID']
+    test_X_E.drop(['PatientID', 'AssessmentID'], axis=1, inplace = True)
     
     
     #predicting:
@@ -282,8 +275,8 @@ def classification(studies, featToexclude):
     print(metrics.classification_report(test_y, pred_y_ts))
     print(metrics.confusion_matrix(test_y, pred_y_ts))
     
-    pred_y_E = xgbc.predict(test_X_E)
-    results = pd.DataFrame({"PatientID": patientsID_E, target: pred_y_E})
+    pred_y_E = np.max(xgbc.predict_proba(test_X_E), axis=1)
+    results = pd.DataFrame({"AssessmentID": AssessmentID, target: pred_y_E})
     results.to_csv("submission_LoadStatus.csv", index=False)    
 
 
@@ -563,7 +556,7 @@ studies = [study_A, study_B, study_C, study_D, study_E]
 
 featToexclude = ['Study', 'Country', 'AssessmentID','LeadStatus', 'PANSS_Total',
                  'LeadStatus_Assign to CS', 'LeadStatus_Flagged', 'LeadStatus_Passed']
-forecaste(studies, featToexclude)
+forecast(studies, featToexclude)
 
-featToexclude = ['Study', 'Country', 'AssessmentID']
+featToexclude = ['Study', 'Country']
 classification(studies, featToexclude)
