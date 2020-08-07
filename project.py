@@ -16,7 +16,7 @@ import seaborn as sns
 import xgboost as xgb
 from sklearn.ensemble import GradientBoostingRegressor as gbm
 from sklearn.preprocessing import OneHotEncoder
-from sklearn.preprocessing import LabelBinarizer
+from sklearn.preprocessing import LabelEncoder
 from scipy import cluster
 from sklearn import preprocessing
 from sklearn.cluster import KMeans
@@ -31,6 +31,7 @@ from statsmodels.formula.api import ols
 from sklearn.preprocessing import PolynomialFeatures
 import statsmodels.api as sm
 import json
+from sklearn import metrics
 
 
 def drug_eff(studies, verbose = True, plot= True):
@@ -219,6 +220,71 @@ def forecaste(studies, featToexclude):
     pred_y_E = xgbr.predict(test_X_E)
     results = pd.DataFrame({"PatientID": patientsID_E, "PANSS_Total": pred_y_E})
     results.to_csv("submission_PANSS_2.csv", index=False)
+    
+def classification(studies, featToexclude):
+    target = 'LeadStatus'
+    study = studies[0].sum_feat
+    for st in studies[1:-1]:
+        study = pd.concat([study, st.sum_feat])
+    sorted_data = study.sort_values(by = ['PatientID', 'VisitDay'])
+    train_X = sorted_data.loc[:,
+                 ~study.columns.isin(featToexclude)]
+    duplicate = train_X.duplicated(keep='last', subset=['PatientID'])  
+    train_X = train_X[duplicate == True]
+    
+    train_y = sorted_data[[target, 'PatientID']]
+    duplicate = train_y.duplicated(keep='first', subset=['PatientID'])  
+    train_y = train_y[duplicate == True]
+    
+    duplicate = train_X.duplicated(keep='last', subset=['PatientID'])  
+    test_X = train_X[duplicate == False]
+    train_X = train_X[duplicate == True]
+    
+    duplicate = train_y.duplicated(keep='first', subset=['PatientID'])  
+    test_y = train_y[duplicate == False]
+    train_y = train_y[duplicate == True]
+    lb = LabelEncoder()
+    train_y[target] = lb.fit_transform(train_y[target])
+    test_y[target]  = lb.fit_transform(test_y[target])
+    
+    train_X.drop(['PatientID', 'LeadStatus'], axis=1, inplace = True)
+    train_y.drop(['PatientID'], axis=1, inplace = True)
+    test_X.drop(['PatientID', 'LeadStatus'], axis=1, inplace = True)
+    test_y.drop(['PatientID'], axis=1, inplace = True)
+    
+    xgbc = xgb.XGBClassifier(objective='multi:softmax')
+    xgbc.fit(train_X, train_y.values)
+    
+          
+    #testing on Study_E:
+    studyE = studies[-1].sum_feat
+    sorted_data = studyE.sort_values(by = ['PatientID', 'VisitDay'])
+    test_X_E = sorted_data.loc[:, ~studyE.columns.isin(featToexclude)]
+    test_X_E.drop_duplicates(keep='last', subset=['PatientID'], inplace= True) 
+    patientsID_E = test_X_E["PatientID"]
+    test_X_E.drop('PatientID', axis=1, inplace = True)
+    
+    
+    #predicting:
+    pred_y_ts = xgbc.predict(test_X)
+    pred_y_tr = xgbc.predict(train_X)
+    
+    print("Training results:")
+    print(train_y)
+    print(pred_y_tr)
+    print(metrics.classification_report(train_y, pred_y_tr))
+    print(metrics.confusion_matrix(train_y, pred_y_tr))
+    
+    
+    print("Test results:")
+    print(test_y)
+    print(pred_y_ts)
+    print(metrics.classification_report(test_y, pred_y_ts))
+    print(metrics.confusion_matrix(test_y, pred_y_ts))
+    
+    pred_y_E = xgbc.predict(test_X_E)
+    results = pd.DataFrame({"PatientID": patientsID_E, target: pred_y_E})
+    results.to_csv("submission_LoadStatus.csv", index=False)    
 
 
 class Study(object):
@@ -326,15 +392,15 @@ class Study(object):
         
     #important parameters using randomForest, boosting,...:
     #encoding the LeadStatus variable:
-    if self.name != 'E':
-        ohe_df = pd.get_dummies(self.study.LeadStatus, prefix='LeadStatus')
-        ohe_df.reset_index(drop=True, inplace=True)
-        self.study.reset_index(drop=True, inplace=True)
-        data = pd.concat([self.study, ohe_df], axis=1).drop(['LeadStatus'], axis=1)
-        self.study_ohe = data
-    else:
-        data =self.study
-    
+    # if self.name != 'E':
+    #     ohe_df = pd.get_dummies(self.study.LeadStatus, prefix='LeadStatus')
+    #     ohe_df.reset_index(drop=True, inplace=True)
+    #     self.study.reset_index(drop=True, inplace=True)
+    #     data = pd.concat([self.study, ohe_df], axis=1).drop(['LeadStatus'], axis=1)
+    #     self.study_ohe = data
+    # else:
+    #     data =self.study
+    data =self.study
     xgb_params = {
     'eta': 0.05,
     'max_depth': 8,
@@ -370,7 +436,7 @@ class Study(object):
     
     #New features consisting of the sum of P, N and G separately:
     if self.name != 'E':
-        vis = self.study_ohe
+        vis = data
         pos = vis.loc[:, vis.columns.isin(['P1','P2','P3','P4','P5','P6','P7'])].sum(axis=1)
         neg = vis.loc[:, vis.columns.isin(['N1','N2','N3','N4','N5','N6','N7'])].sum(axis=1)
         gen = vis.loc[:, vis.columns.isin(['G1','G2','G3','G4','G5','G6','G7','G8','G9','G10','G11','G12','G13','G14',
@@ -466,30 +532,30 @@ class Study(object):
 
 study_A = Study(name = 'A')
 study_A.preprocess(False, False)
-study_A.drug_effect(False, False)
-study_A.classify_patients()
+# study_A.drug_effect(False, False)
+# study_A.classify_patients()
 # study_A.umap()
 
 
 study_B = Study(name = 'B')
 study_B.preprocess(False, False)
-study_B.drug_effect(False, False)
-study_B.classify_patients()
+# study_B.drug_effect(False, False)
+# study_B.classify_patients()
 
 study_C = Study(name = 'C')
 study_C.preprocess(False, False)
-study_C.drug_effect(False, False)
-study_C.classify_patients()
+# study_C.drug_effect(False, False)
+# study_C.classify_patients()
 
 study_D = Study(name = 'D')
 study_D.preprocess(False, False)
-study_D.drug_effect(False, False)
-study_D.classify_patients()
+# study_D.drug_effect(False, False)
+# study_D.classify_patients()
 
 study_E = Study(name = 'E')
 study_E.preprocess(False, False)
 # study_E.drug_effect(False, False)
-study_E.classify_patients()
+# study_E.classify_patients()
 
 studies = [study_A, study_B, study_C, study_D, study_E]
 # studies = [study_A, study_B, study_C, study_D]
@@ -498,3 +564,6 @@ studies = [study_A, study_B, study_C, study_D, study_E]
 featToexclude = ['Study', 'Country', 'AssessmentID','LeadStatus', 'PANSS_Total',
                  'LeadStatus_Assign to CS', 'LeadStatus_Flagged', 'LeadStatus_Passed']
 forecaste(studies, featToexclude)
+
+featToexclude = ['Study', 'Country', 'AssessmentID']
+classification(studies, featToexclude)

@@ -4,7 +4,7 @@ Dep. Variable:            PANSS_Total   R-squared:                       0.340
 Model:                            OLS   Adj. R-squared:                  0.338
 Method:                 Least Squares   F-statistic:                     173.0
 Date:                Fri, 07 Aug 2020   Prob (F-statistic):          1.30e-119
-Time:                        01:37:50   Log-Likelihood:                -5538.6
+Time:                        02:12:54   Log-Likelihood:                -5538.6
 No. Observations:                1351   AIC:                         1.109e+04
 Df Residuals:                    1346   BIC:                         1.111e+04
 Df Model:                           4                                         
