@@ -309,10 +309,11 @@ class Study(object):
     self.study.TxGroup = self.study.TxGroup.apply(
       lambda x: 1 if x=="Treatment" else 0)
     #We start by removing the abnormal data, like multiple assessment,...
-    subsets = [['PatientID', 'VisitDay'], ['AssessmentID']]
-    for subset in subsets:
-        duplicate = self.study.duplicated(keep='last', subset=subset)  
-        self.study = self.study[duplicate == False]
+    if self.name != "E":
+        subsets = [['PatientID', 'VisitDay'], ['AssessmentID']]
+        for subset in subsets:
+            duplicate = self.study.duplicated(keep='last', subset=subset)  
+            self.study = self.study[duplicate == False]
     
     #Check if there is any NaN:
     NaN_col = (self.study.isnull() == True).sum()
