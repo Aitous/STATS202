@@ -30,8 +30,14 @@ from sklearn.linear_model import LinearRegression
 from statsmodels.formula.api import ols
 from sklearn.preprocessing import PolynomialFeatures
 import statsmodels.api as sm
-import json
+import pickle
 from sklearn import metrics
+from sklearn.feature_selection import SelectFromModel
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.linear_model import LinearRegression
+from xgboost.sklearn import XGBClassifier
+from sklearn.model_selection import GridSearchCV 
+from sklearn.decomposition import PCA
 
 
 def drug_eff(studies, verbose = True, plot= True):
@@ -110,7 +116,7 @@ def kmeans(data, features, num_clusters):
         ax.set_title("Clustering based on " + features[0] + "," + features[1] + " and " + features[2])  
         plt.show()  
 
-def classify(studies):
+def classify(studies, k):
     study = studies[0].sum_feat[studies[0].sum_feat["VisitDay"] == 0]
     name = "drugg_effect_model_summary_study_"+ studies[0].name
     plot = "study_"+ studies[0].name
@@ -125,45 +131,64 @@ def classify(studies):
     # figure,_ = plt.subplots(figsize=(10, 10))
     # clusters = cluster.hierarchy.linkage(scaled_var, 'complete')
     # dendo = cluster.hierarchy.dendrogram(clusters, labels = data.index)
+    study["p"] = study[["P1", "P2", "P6"]].sum(axis=1)
+    study["g"] = study[["G9", "G15", "G16"]].sum(axis=1)
+    study["n"] = study[["N3", "N2", "N5"]].sum(axis=1)
+    
     
     #pos sum vs. neg sum
-    kmeans(study, ['pos', 'neg'], num_clusters = 4)
+    kmeans(study, ['pos', 'neg'], num_clusters = k)
     
     #pos sum vs. gen sum
-    kmeans(study, ['pos', 'gen'], num_clusters = 4)
+    kmeans(study, ['pos', 'gen'], num_clusters = k)
     
     #neg sum vs. gen sum
-    kmeans(study, ['neg', 'gen'], num_clusters = 4)
+    kmeans(study, ['neg', 'gen'], num_clusters = k)
     
     #P2 vs PANSS_Total
-    kmeans(study, ['P2', 'PANSS_Total'], num_clusters = 4)
+    kmeans(study, ['P2', 'PANSS_Total'], num_clusters = k)
     
     #P6 vs PANSS_Total
-    kmeans(study, ['P6', 'PANSS_Total'], num_clusters = 4)
+    kmeans(study, ['P6', 'PANSS_Total'], num_clusters = k)
     
     #P2 vs P6
-    kmeans(study, ['P2', 'P6'], num_clusters = 4)  
+    kmeans(study, ['P2', 'P6'], num_clusters = k)  
+    
+    #P2 vs N3
+    kmeans(study, ['P2', 'N3'], num_clusters = k)  
+
+    #pos vs. neg vs. gen:
+    kmeans(study, ['pos', 'neg', 'gen'], num_clusters = k) 
+    
+    #P2 vs. P6 vs. P1:
+    kmeans(study, ['P1', 'P2', 'P6'], num_clusters = k) 
+    
+    #p vs. N3 vs. G9:
+    kmeans(study, ['p', 'N3', 'G9'], num_clusters = k)     
+    
+    #p = P1 + P2 + P6 vs. n = N3 + N2 + N5 vs. g = G9 + G15 + G16:
+    kmeans(study, ['p', 'n', 'g'], num_clusters = k)
     
     #P2 vs. P6 vs. PANSS_Total:
-    kmeans(study, ['P2', 'P6', 'PANSS_Total'], num_clusters = 4)  
+    kmeans(study, ['P2', 'P6', 'PANSS_Total'], num_clusters = k)  
 
     #P2 vs. N2 vs. PANSS_Total:
-    kmeans(study, ['P2', 'N2', 'PANSS_Total'], num_clusters = 4) 
+    kmeans(study, ['P2', 'N2', 'PANSS_Total'], num_clusters = k) 
     
     #P2 vs. G9 vs. PANSS_Total:
-    kmeans(study, ['P2', 'G9', 'PANSS_Total'], num_clusters = 4) 
+    kmeans(study, ['P2', 'G9', 'PANSS_Total'], num_clusters = k) 
     
     #RaterID effect on total score:
-    kmeans(study, ['RaterID', 'PANSS_Total'], num_clusters = 4)
+    kmeans(study, ['RaterID', 'PANSS_Total'], num_clusters = k)
 
     #SiteID effect on total score:
-    kmeans(study, ['SiteID', 'PANSS_Total'], num_clusters = 4)
+    kmeans(study, ['SiteID', 'PANSS_Total'], num_clusters = k)
         
 def forecast(studies, featToexclude):
     study = studies[0].sum_feat
     for st in studies[1:]:
         study = pd.concat([study, st.sum_feat])
-    # study = studies[-1].study
+    study = studies[-1].sum_feat
     sorted_data = study.sort_values(by = ['PatientID', 'VisitDay'])
     train_X = sorted_data.loc[:,
                  ~study.columns.isin(featToexclude)]
@@ -173,6 +198,7 @@ def forecast(studies, featToexclude):
     train_y = sorted_data[['PANSS_Total', 'PatientID']]
     duplicate = train_y.duplicated(keep='first', subset=['PatientID'])  
     train_y = train_y[duplicate == True]
+    train_ys = sorted_data[duplicate == True]
     
     duplicate = train_X.duplicated(keep='last', subset=['PatientID'])  
     test_X = train_X[duplicate == False]
@@ -181,14 +207,58 @@ def forecast(studies, featToexclude):
     duplicate = train_y.duplicated(keep='first', subset=['PatientID'])  
     test_y = train_y[duplicate == False]
     train_y = train_y[duplicate == True]
+    test_ys = train_ys[duplicate == False]
+    train_ys = train_ys[duplicate == True]
+
     
     train_X.drop('PatientID', axis=1, inplace = True)
     train_y.drop('PatientID', axis=1, inplace = True)
     test_X.drop('PatientID', axis=1, inplace = True)
     test_y.drop('PatientID', axis=1, inplace = True)
     
-    xgbr = xgb.XGBRegressor() 
-    xgbr.fit(train_X, train_y)
+    models = {}
+    for feat in ['P1','P2','P3','P4','P5','P6','P7','N1','N2','N3','N4','N5','N6','N7',
+                 'G1','G2','G3','G4','G5','G6','G7','G8','G9','G10','G11','G12','G13',
+                 'G14','G15','G16']:
+        print("Training the model for "+ feat)
+        xgbr = xgb.XGBRegressor(evalMetric = 'rmse')
+        parameters = {
+                  'objective':['reg:squarederror'],
+                  'learning_rate': [0.01, .03, 0.05, .07, 0.1], #so called `eta` value
+                  'max_depth': [3, 5, 6, 7, 9],
+                  'min_child_weight': [4],
+                  'subsample': [0.7],
+                  'colsample_bytree': [0.7],
+                  'n_estimators': [500]}
+        xgbr_grid = GridSearchCV(xgbr,
+                            parameters,
+                            cv = 5,
+                            verbose=True, 
+                            refit = True)
+        xgbr_grid.fit(train_X, train_ys[feat])
+        xgbr = xgbr_grid.best_estimator_
+        models[feat] = xgbr
+        pickle.dump(xgbr, open("/models/xgb_" + feat + ".dat", "wb"))
+        
+    # xgbr = xgb.XGBRegressor(evalMetric = 'rmse')
+    # parameters = {
+    #           'objective':['reg:squarederror'],
+    #           'learning_rate': [0.01, .03, 0.05, .07, 0.1], #so called `eta` value
+    #           'max_depth': [3, 5, 6, 7, 9],
+    #           'min_child_weight': [4],
+    #           'silent': [1],
+    #           'subsample': [0.7],
+    #           'colsample_bytree': [0.7],
+    #           'n_estimators': [500]}
+    # xgbr_grid = GridSearchCV(xgbr,
+    #                     parameters,
+    #                     cv = 5,
+    #                     verbose=True, 
+    #                     refit = True)
+    # xgbr_grid.fit(train_X, train_y)
+    # xgbr = xgbr_grid.best_estimator_
+    # print(xgbr_grid.best_score_)
+    # print(xgbr_grid.best_params_)
     
           
     #testing on Study_E:
@@ -201,25 +271,39 @@ def forecast(studies, featToexclude):
     
     
     #predicting:
-    pred_y_ts = xgbr.predict(test_X)
-    pred_y_tr = xgbr.predict(train_X)
-    score_ts = xgbr.score(test_X, test_y.PANSS_Total)
-    score_tr = xgbr.score(train_X, train_y)
+    # pred_y_ts = xgbr.predict(test_X)
+    # pred_y_tr = xgbr.predict(train_X)
+    # score_ts = xgbr.score(test_X, test_y.PANSS_Total)
+    # score_tr = xgbr.score(train_X, train_y)
+    pred_y_ts = np.zeros(len(test_X))
+    pred_y_tr = np.zeros(len(train_X))
+    for feat in ['P1','P2','P3','P4','P5','P6','P7','N1','N2','N3','N4','N5','N6','N7',
+                 'G1','G2','G3','G4','G5','G6','G7','G8','G9','G10','G11','G12','G13',
+                 'G14','G15','G16']:
+        pred_y_ts += models[feat].predict(test_X)
+        pred_y_tr += models[feat].predict(train_X)
+        
     
-    print("Training results:")
-    print(train_y)
-    print(pred_y_tr)
-    print(np.mean((train_y.values - pred_y_tr)**2))
+    print("Training error: ")
+    # print(train_y)
+    # print(pred_y_tr)
+    print("With round: " + str(np.mean((train_y.values - np.round(pred_y_tr))**2)))
+    print("Without round: " + str(np.mean((train_y.values - pred_y_tr)**2)))    
     
     
-    print("Test results:")
-    print(test_y)
-    print(pred_y_ts)
-    print(np.mean((test_y.values - pred_y_ts)**2))
+    print("Test error:")
+    # print(test_y)
+    # print(pred_y_ts)
+    print("With round: " + str(np.mean((test_y.values - np.round(pred_y_ts))**2)))
+    print("Without round: " + str(np.mean((test_y.values - pred_y_ts)**2)))
     
-    pred_y_E = xgbr.predict(test_X_E)
+    # pred_y_E = xgbr.predict(test_X_E)
+    pred_y_E = np.zeros(len(test_X_E))
+    for feat in ['P1','P2','P3','P4','P5','P6','P7','N1','N2','N3','N4','N5','N6','N7',
+             'G1','G2','G3','G4','G5','G6','G7','G8','G9','G10','G11','G12','G13',
+             'G14','G15','G16']:
     results = pd.DataFrame({"PatientID": patientsID_E, "PANSS_Total": pred_y_E})
-    results.to_csv("submission_PANSS_2.csv", index=False)
+    results.to_csv("submission_PANSS_3.csv", index=False)
     
 def classification(studies, featToexclude):
     target = 'LeadStatus'
@@ -277,7 +361,17 @@ def classification(studies, featToexclude):
     
     pred_y_E = np.max(xgbc.predict_proba(test_X_E), axis=1)
     results = pd.DataFrame({"AssessmentID": AssessmentID, target: pred_y_E})
-    results.to_csv("submission_LoadStatus.csv", index=False)    
+    results.to_csv("submission_LoadStatus.csv", index=False)  
+
+
+def select_features(X_train, y_train, feat_max):
+	# configure to select a subset of features
+	fs = SelectFromModel(RandomForestRegressor(n_estimators=1000), max_features=feat_max)
+	# learn relationship from training data
+	fs.fit(X_train, y_train)
+	# transform train input data
+	X_train_fs = fs.transform(X_train)
+	return X_train_fs, fs
 
 
 class Study(object):
@@ -395,27 +489,32 @@ class Study(object):
     # else:
     #     data =self.study
     data =self.study
-    xgb_params = {
-    'eta': 0.05,
-    'max_depth': 8,
-    'subsample': 0.7,
-    'colsample_bytree': 0.7,
-    'objective': 'reg:linear',
-    'silent': 1,
-    'seed' : 0
-    }
+
     train_df = data.loc[:, ~data.columns.isin(['Study', 'Country', 'PatientID', 'AssessmentID',
-                                                    'PANSS_Total', 'LeadStatus'])]
+                                                    'PANSS_Total', 'LeadStatus', 'RaterID', 'SiteID'])]
     train_y = data.PANSS_Total    
     
-    dtrain = xgb.DMatrix(train_df, train_y, feature_names=train_df.columns.values)
-    model = xgb.train(dict(xgb_params, silent=0), dtrain, num_boost_round=50)
     # plot the important features #
+    model = xgb.XGBRegressor() 
+    # fit the model
+    model.fit(train_df, train_y)
     if plot:
         fig, ax = plt.subplots(figsize=(12,18))
         xgb.plot_importance(model, max_num_features=50, height=0.8, ax=ax)
+        plt.title("feature importance study " + self.name)
         plt.show()
     
+
+    model = RandomForestRegressor()
+    model.fit(train_df, train_y)
+    importance = model.feature_importances_
+    if plot:
+        fig, ax2 = plt.subplots(figsize=(12,18))
+        ax2.barh([train_df.columns[x] for x in range(len(importance))], importance)
+        plt.show()
+    
+    
+
     
     reg = gbm(random_state=0)
     reg.fit(train_df, train_y)
@@ -462,21 +561,21 @@ class Study(object):
    
     
     
-  def classify_patients(self, k = 5):
+  def classify_patients(self, k = 3):
       """
       Classify the patient during the first visit to k different groups.
 
       Parameters
       ----------
       k : TYPE, optional
-          DESCRIPTION. The default is 5.
+          DESCRIPTION. The default is 3.
 
       Returns
       -------
       None.
 
       """
-      classify([self])
+      classify([self], k)
     
   def umap(self):
       """
@@ -519,7 +618,7 @@ class Study(object):
 
       """
       featToexclude = ['Study', 'Country', 'AssessmentID','LeadStatus', 'PANSS_Total']
-      forcaste([self], featToexclude)
+      forcast([self], featToexclude)
       
     
     
@@ -556,7 +655,13 @@ studies = [study_A, study_B, study_C, study_D, study_E]
 # drug_eff(studies)
 
 featToexclude = ['Study', 'Country', 'AssessmentID','LeadStatus', 'PANSS_Total',
-                 'LeadStatus_Assign to CS', 'LeadStatus_Flagged', 'LeadStatus_Passed']
+                 'LeadStatus_Assign to CS', 'LeadStatus_Flagged', 'LeadStatus_Passed',
+                 'P3','P4','P5','P7','N1','N4','N6','N7','G1','G2','G3','G4','G5','G6',
+                 'G7','G8','G10','G11','G12','G13','G14', "pos", "neg", "gen", "RaterID", "SiteID"]
+featToexclude = ['Study', 'Country', 'AssessmentID','LeadStatus', 'PANSS_Total',
+                 'LeadStatus_Assign to CS', 'LeadStatus_Flagged', 'LeadStatus_Passed',
+                 "pos", "neg", "gen"]
+
 forecast(studies, featToexclude)
 
 featToexclude = ['Study', 'Country']
