@@ -6,6 +6,7 @@ Created on Mon Aug  3 19:03:01 2020
 """
 import os
 from typing import Text, Tuple
+import warnings
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -40,6 +41,8 @@ from sklearn.model_selection import GridSearchCV
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import ElasticNetCV
+
+warnings.filterwarnings("ignore")
 
 
 def drug_eff(studies, verbose = True, plot= True):
@@ -186,11 +189,11 @@ def classify(studies, k):
     #SiteID effect on total score:
     kmeans(study, ['SiteID', 'PANSS_Total'], num_clusters = k)
         
-def forecast(studies, featToexclude, mdName, granular=True, pca=False):
-    study = studies[0].sum_feat
+def forecast(studies, featToexclude, mdName, granular=True, pca=False, alltrain = False, allstudies = False):
+    study = studies[0].study
     for st in studies[1:]:
-        study = pd.concat([study, st.sum_feat])
-    study = studies[-1].sum_feat
+        study = pd.concat([study, st.study])
+    study = studies[-1].study if not allstudies else study
     sorted_data = study.sort_values(by = ['PatientID', 'VisitDay'])
     train_X = sorted_data.loc[:,
                  ~study.columns.isin(featToexclude)]
@@ -202,32 +205,37 @@ def forecast(studies, featToexclude, mdName, granular=True, pca=False):
     train_y = train_y[duplicate == True]
     train_ys = sorted_data[duplicate == True]
     
-    duplicate = train_X.duplicated(keep='last', subset=['PatientID'])  
-    test_X = train_X[duplicate == False]
-    train_X = train_X[duplicate == True]
-    
-    duplicate = train_y.duplicated(keep='first', subset=['PatientID'])  
-    test_y = train_y[duplicate == False]
-    train_y = train_y[duplicate == True]
-    test_ys = train_ys[duplicate == False]
-    train_ys = train_ys[duplicate == True]
-
-    
-    train_X.drop('PatientID', axis=1, inplace = True)
-    train_y.drop('PatientID', axis=1, inplace = True)
+    if not alltrain:
+        duplicate = train_X.duplicated(keep='last', subset=['PatientID'])  
+        test_X = train_X[duplicate == False]
+        train_X = train_X[duplicate == True]
+        
+        duplicate = train_y.duplicated(keep='first', subset=['PatientID'])  
+        test_y = train_y[duplicate == False]
+        train_y = train_y[duplicate == True]
+        test_ys = train_ys[duplicate == False]
+        train_ys = train_ys[duplicate == True]
+    else:
+        duplicate = train_X.duplicated(keep='last', subset=['PatientID'])  
+        test_X = train_X[duplicate == False]
+        
+        duplicate = train_y.duplicated(keep='first', subset=['PatientID'])  
+        test_y = train_y[duplicate == False]
+        test_ys = train_ys[duplicate == False]
+        
     test_X.drop('PatientID', axis=1, inplace = True)
     test_y.drop('PatientID', axis=1, inplace = True)
+    train_X.drop('PatientID', axis=1, inplace = True)
+    train_y.drop('PatientID', axis=1, inplace = True)
     
-    #saving test df:
-    train_X.to_csv("train_X.csv", index=False)        
-    train_y.to_csv("train_y.csv", index=False)
-    test_X.to_csv("test_X.csv", index=False)    
-    test_y.to_csv("test_y.csv", index=False)
+    #saving training df:
+    train_X.to_csv("train_X_"+ mdName +".csv", index=False)        
+    train_y.to_csv("train_y_"+ mdName +".csv", index=False)
+    test_X.to_csv("test_X_"+ mdName +".csv", index=False)    
+    test_y.to_csv("test_y_"+ mdName +".csv", index=False)
     
     models = {}
-    features = ['P1','P2','P3','P4','P5','P6','P7','N1','N2','N3','N4','N5','N6','N7',
-                 'G1','G2','G3','G4','G5','G6','G7','G8','G9','G10','G11','G12','G13',
-                 'G14','G15','G16']
+
     if pca:
         pca = PCA(n_components=5)
         
@@ -240,81 +248,111 @@ def forecast(studies, featToexclude, mdName, granular=True, pca=False):
         train_X = StandardScaler().fit_transform(ft)
         train_X = pca.fit_transform(train_X)
         np.savetxt("train_X_PCA.csv",train_X, delimiter=",")
+    
+    # predictions = pd.read_csv("submission_PANSS_all_train.csv").drop('PatientID', axis=1)
+    # train_X = pd.concat([train_X, test_X_E.drop('PatientID', axis=1)])
+    # train_y = pd.concat([train_y, predictions], )
         
     if granular:
         for feat in features:
             print("================================================================")
             print("Training the model for "+ feat)
-            xgbr = xgb.XGBRegressor(evalMetric = 'rmse')
+            params = {'evalMetric':'rmse'}
+            xgbr = xgb.XGBRegressor(**params)
             parameters = {
                       'objective':['reg:squarederror'],
-                      'learning_rate': [0.01, 0.02, .03, 0.04, 0.05, .07, 0.1], #so called `eta` value
-                      'max_depth': [3, 5, 6, 7, 9],
-                      'min_child_weight': [3, 4],
+                      'learning_rate': [.01], #so called `eta` value
+                      'max_depth': [1],
+                      'min_child_weight': [6],
                       'subsample': [0.7],
                       'colsample_bytree': [0.7],
-                      'n_estimators': [500]}
+                      'n_estimators': [800],
+                      'gamma': [0.0, 0.1, 0.2 , 0.3, 0.4],
+                      'reg_alpha': [0.005, 0.01, 0.05, 0.1], 
+                      'verbose': [0]}
             xgbr_grid = GridSearchCV(xgbr,
                                 parameters,
-                                cv = 5,
-                                verbose = False, 
-                                refit = True)
-            xgbr_grid.fit(train_X, train_ys[feat])
+                                cv = 5, 
+                                refit = True,
+                                verbose = False)
+            xgbr_grid.fit(train_X, train_ys[feat], early_stopping_rounds=20,
+                          eval_set=[(train_X, train_ys[feat]), (test_X, test_ys[feat])])
             xgbr = xgbr_grid.best_estimator_
             models[feat] = xgbr
             pickle.dump(xgbr, open("models/xgb_" + feat + "_" + mdName + ".dat", "wb"))
+            
+            results = xgbr.evals_result()
+            epochs = len(results['validation_0']['rmse'])
+            x_axis = range(0, epochs)
+            # plot log loss
+            fig, ax = plt.subplots()
+            ax.plot(x_axis, results['validation_0']['rmse'], label='Train')
+            ax.plot(x_axis, results['validation_1']['rmse'], label='Test')
+            ax.legend()
+            plt.ylabel('rmse')
+            plt.title('XGBoost rmse')
+            plt.savefig("models/xgb_" + feat + "_" + mdName)
+            # plt.show()
         #predicting:
-        pred_y_ts = np.zeros(len(test_X))
+        if not alltrain:
+            pred_y_ts = np.zeros(len(test_X))
         pred_y_tr = np.zeros(len(train_X))
         for feat in features:
-            pred_y_ts += models[feat].predict(test_X)
+            if not alltrain:
+                pred_y_ts += models[feat].predict(test_X)
             pred_y_tr += models[feat].predict(train_X)
             
             
     if not granular:  
-        xgbr = xgb.XGBRegressor(evalMetric = 'rmse')
+        params = {'evalMetric': 'rmse'}
+        xgbr = xgb.XGBRegressor(**params)
         parameters = {
-                  'objective':['reg:squarederror'],
-                  'learning_rate': [0.01, .03, 0.05, .07, 0.1],
-                  'max_depth': [3, 5, 6, 7, 9],
-                  'min_child_weight': [4],
-                  'silent': [1],
-                  'subsample': [0.7],
-                  'colsample_bytree': [0.7],
-                  'n_estimators': [500]}
+                      'objective':['reg:squarederror'],
+                      'learning_rate': [.01], #so called `eta` value
+                      'max_depth': [1, 2],
+                      'min_child_weight': [6],
+                      'subsample': [0.7],
+                      'colsample_bytree': [0.7],
+                      'n_estimators': [800],
+                      'gamma': [0.0, 0.1, 0.2 , 0.3, 0.4 ],
+                      'reg_alpha': [0.005, 0.01, 0.05, 0.1],
+                      'verbose': [0]}
         xgbr_grid = GridSearchCV(xgbr,
                             parameters,
                             cv = 5,
-                            verbose=True, 
+                            verbose=False, 
                             refit = True)
         xgbr_grid.fit(train_X, train_y)
         xgbr = xgbr_grid.best_estimator_
         print(xgbr_grid.best_score_)
         print(xgbr_grid.best_params_)
-        pickle.dump(xgbr, open("models/xgb_" + feat + "_" + mdName + ".dat", "wb"))
+        pickle.dump(xgbr, open("models/xgb_" + mdName + ".dat", "wb"))
         #predicting:
-        pred_y_ts = xgbr.predict(test_X)
+        if not alltrain:
+            pred_y_ts = xgbr.predict(test_X)
+            score_ts = xgbr.score(test_X, test_y.PANSS_Total)
         pred_y_tr = xgbr.predict(train_X)
-        score_ts = xgbr.score(test_X, test_y.PANSS_Total)
         score_tr = xgbr.score(train_X, train_y)
+        
         
     print("Training error: ")
     print("With round: " + str(np.mean((train_y.values - np.round(pred_y_tr))**2)))
     print("Without round: " + str(np.mean((train_y.values - pred_y_tr)**2)))    
     
-    
-    print("Test error:")
-    print("With round: " + str(np.mean((test_y.values - np.round(pred_y_ts))**2)))
-    print("Without round: " + str(np.mean((test_y.values - pred_y_ts)**2)))
+    if not alltrain:
+        print("Test error:")
+        print("With round: " + str(np.mean((test_y.values - np.round(pred_y_ts))**2)))
+        print("Without round: " + str(np.mean((test_y.values - pred_y_ts)**2)))
     
           
     #testing on Study_E:
-    studyE = studies[-1].sum_feat
+    studyE = studies[-1].study
     sorted_data = studyE.sort_values(by = ['PatientID', 'VisitDay'])
     test_X_E = sorted_data.loc[:, ~studyE.columns.isin(featToexclude)]
     test_X_E.drop_duplicates(keep='last', subset=['PatientID'], inplace= True)  
     patientsID_E = test_X_E["PatientID"]
     test_X_E.drop('PatientID', axis=1, inplace = True)
+    test_X_E.to_csv("test_X_E"+ mdName +".csv", index=False)
     
     if pca:
         ft = test_X_E[features]
@@ -328,28 +366,37 @@ def forecast(studies, featToexclude, mdName, granular=True, pca=False):
         for feat in features:
             pred_y_E += models[feat].predict(test_X_E)
     results = pd.DataFrame({"PatientID": patientsID_E, "PANSS_Total": pred_y_E})
-    results.to_csv("submission_PANSS_3.csv", index=False)
+    results.to_csv("submission_PANSS_"+ mdName +".csv", index=False)
     
-def predict(file, mdName, features, study, featToexclude):
+def predict(file, mdName, features, study, featToexclude, oneModel):
     models = {}
-    for ft in features:
-        models[ft] = pickle.load(open(file +"_"+ ft +"_"+ mdName + ".dat", 'rb'))
+    if not oneModel:
+        for ft in features:
+            models[ft] = pickle.load(open(file +"_"+ ft +"_"+ mdName + ".dat", 'rb'))
+    else:
+        models["1"] = pickle.load(open(file +"_"+ mdName + ".dat", 'rb'))
+        features = ["1"]
         
-    test_X = pd.read_csv("test_X.csv")
-    train_X = pd.read_csv("train_X.csv")
-    test_y = pd.read_csv("test_y.csv").PANSS_Total
-    train_y = pd.read_csv("train_y.csv").PANSS_Total
+    test_X = pd.read_csv("test_X_"+ mdName +".csv")
+    train_X = pd.read_csv("train_X_"+ mdName +".csv")
+    if mdName == "":
+        test_X = pd.read_csv("test_X_"+ mdName +".csv").drop(['SiteID', 'RaterID', 'PANSS_Total'], axis=1)
+        train_X = pd.read_csv("train_X_"+ mdName +".csv").drop(['SiteID', 'RaterID', 'PANSS_Total'], axis=1)
+    test_y = pd.read_csv("test_y_"+ mdName +".csv").PANSS_Total
+    train_y = pd.read_csv("train_y_"+ mdName +".csv").PANSS_Total
+    
+    # test_X_E = pd.read_csv("test_X_E"+ mdName +".csv")
     pred_y_ts = np.zeros(len(test_X))
     pred_y_tr = np.zeros(len(train_X))
     for feat in features:
         pred_y_ts += models[feat].predict(test_X)
         pred_y_tr += models[feat].predict(train_X)
-    print("Training error: ")
+    print("Training error for model " + mdName + ":")
     print("With round: " + str(np.mean((train_y - np.round(pred_y_tr))**2)))
     print("Without round: " + str(np.mean((train_y - pred_y_tr)**2)))    
     
     
-    print("Test error:")
+    print("Test error for model " + mdName + ":")
     print("With round: " + str(np.mean((test_y - np.round(pred_y_ts))**2)))
     print("Without round: " + str(np.mean((test_y - pred_y_ts)**2)))
         
@@ -357,10 +404,10 @@ def predict(file, mdName, features, study, featToexclude):
     #Forecasting:
     studyE = study.sum_feat
     sorted_data = studyE.sort_values(by = ['PatientID', 'VisitDay'])
-    test_X_E = sorted_data.loc[:, ~studyE.columns.isin(featToexclude)]
-    test_X_E.drop_duplicates(keep='last', subset=['PatientID'], inplace= True)  
-    patientsID_E = test_X_E["PatientID"]
-    test_X_E.drop('PatientID', axis=1, inplace = True)
+    temp = sorted_data.loc[:, ~studyE.columns.isin(featToexclude)]
+    temp.drop_duplicates(keep='last', subset=['PatientID'], inplace= True)  
+    patientsID_E = temp["PatientID"]
+    test_X_E = pd.read_csv("test_X_E_tuned.csv")
     
     if mdName == "PCA":
         pca = PCA(n_components=5)
@@ -372,7 +419,22 @@ def predict(file, mdName, features, study, featToexclude):
     for feat in features:
         pred_y_E += models[feat].predict(test_X_E)
     results = pd.DataFrame({"PatientID": patientsID_E, "PANSS_Total": pred_y_E})
-    results.to_csv("submission_PANSS_all_train.csv", index=False)
+    results.to_csv("submission_PANSS_"+ mdName +".csv", index=False)
+    return results
+
+def ensembling(models, features, featuresToexclude, study_E):
+    results = {}
+    for mdName in models:
+        results[mdName] = predict("models/xgb", mdName, features, study_E, featToexclude, False)
+    PatientID_E = results[models[0]].PatientID
+    pred_y_E = np.zeros(len(PatientID_E))
+    for mdName in results:
+        pred_y_E += results[mdName].PANSS_Total
+    pred_y_E /= (len(models))
+    
+    results = pd.DataFrame({"PatientID": PatientID_E, "PANSS_Total": pred_y_E})
+    results.to_csv("submission_PANSS_Ensemble.csv", index=False)
+    
     
     
 def forcaast_LR(studies, featToexclude, mdName): 
@@ -408,10 +470,10 @@ def forcaast_LR(studies, featToexclude, mdName):
     test_y.drop('PatientID', axis=1, inplace = True)
     
     #saving test df:
-    train_X.to_csv("train_X.csv")        
-    train_y.to_csv("train_y.csv")
-    test_X.to_csv("test_X.csv")    
-    test_y.to_csv("test_y.csv")
+    train_X.to_csv("train_X_"+ mdName +".csv")        
+    train_y.to_csv("train_y_"+ mdName +".csv")
+    test_X.to_csv("test_X_"+ mdName +".csv")    
+    test_y.to_csv("test_y_"+ mdName +".csv")
     
     models = {}
     features = ['P1','P2','P3','P4','P5','P6','P7','N1','N2','N3','N4','N5','N6','N7',
@@ -456,7 +518,7 @@ def forcaast_LR(studies, featToexclude, mdName):
     for feat in features:
         pred_y_E += models[feat].predict(test_X_E)
     results = pd.DataFrame({"PatientID": patientsID_E, "PANSS_Total": pred_y_E})
-    results.to_csv("submission_PANSS_LR.csv", index=False)
+    results.to_csv("submission_PANSS_"+ mdName +".csv", index=False)
 
     
 def classification(studies, featToexclude):
@@ -543,7 +605,7 @@ class Study(object):
     self.study = pd.read_csv(self.data_path)
     self.figsize = figsize
 
-  def preprocess(self, verbose = True, plot=True):
+  def preprocess(self, verbose = True, plot=True, featureImprotance= False):
     """
     Preprocess the study data.
     """
@@ -649,37 +711,38 @@ class Study(object):
     train_y = data.PANSS_Total    
     
     # plot the important features #
-    model = xgb.XGBRegressor() 
-    # fit the model
-    model.fit(train_df, train_y)
-    if plot:
-        fig, ax = plt.subplots(figsize=(12,18))
-        xgb.plot_importance(model, max_num_features=50, height=0.8, ax=ax)
-        plt.title("feature importance study " + self.name)
-        plt.show()
+    if featureImprotance:
+        model = xgb.XGBRegressor() 
+        # fit the model
+        model.fit(train_df, train_y)
+        if plot:
+            fig, ax = plt.subplots(figsize=(12,18))
+            xgb.plot_importance(model, max_num_features=50, height=0.8, ax=ax)
+            plt.title("feature importance study " + self.name)
+            plt.show()
+        
     
-
-    model = RandomForestRegressor()
-    model.fit(train_df, train_y)
-    importance = model.feature_importances_
-    if plot:
-        fig, ax2 = plt.subplots(figsize=(12,18))
-        ax2.barh([train_df.columns[x] for x in range(len(importance))], importance)
-        plt.show()
+        model = RandomForestRegressor()
+        model.fit(train_df, train_y)
+        importance = model.feature_importances_
+        if plot:
+            fig, ax2 = plt.subplots(figsize=(12,18))
+            ax2.barh([train_df.columns[x] for x in range(len(importance))], importance)
+            plt.show()
+        
+        
     
-    
-
-    
-    reg = gbm(random_state=0)
-    reg.fit(train_df, train_y)
-    imp_feat = reg.feature_importances_
-    indices_sorted = imp_feat.argsort()
-    imp_feat = imp_feat[indices_sorted]
-    feat = train_df.columns[indices_sorted]
-    if plot:
-        fig, ax = plt.subplots(figsize=(12,18))
-        ax.barh(feat, imp_feat)
-        plt.show()
+        
+        reg = gbm(random_state=0)
+        reg.fit(train_df, train_y)
+        imp_feat = reg.feature_importances_
+        indices_sorted = imp_feat.argsort()
+        imp_feat = imp_feat[indices_sorted]
+        feat = train_df.columns[indices_sorted]
+        if plot:
+            fig, ax = plt.subplots(figsize=(12,18))
+            ax.barh(feat, imp_feat)
+            plt.show()
     
     #New features consisting of the sum of P, N and G separately:
     if self.name != 'E':
@@ -778,29 +841,29 @@ class Study(object):
     
 
 study_A = Study(name = 'A')
-study_A.preprocess(False, False)
+study_A.preprocess(False, False, False)
 # study_A.drug_effect(False, False)
 # study_A.classify_patients()
 # study_A.umap()
 
 
 study_B = Study(name = 'B')
-study_B.preprocess(False, False)
+study_B.preprocess(False, False, False)
 # study_B.drug_effect(False, False)
 # study_B.classify_patients()
 
 study_C = Study(name = 'C')
-study_C.preprocess(False, False)
+study_C.preprocess(False, False, False)
 # study_C.drug_effect(False, False)
 # study_C.classify_patients()
 
 study_D = Study(name = 'D')
-study_D.preprocess(False, False)
+study_D.preprocess(False, False, False)
 # study_D.drug_effect(False, False)
 # study_D.classify_patients()
 
 study_E = Study(name = 'E')
-study_E.preprocess(False, False)
+study_E.preprocess(False, False, False)
 # study_E.drug_effect(False, False)
 # study_E.classify_patients()
 
@@ -812,18 +875,19 @@ featToexclude = ['Study', 'Country', 'AssessmentID','LeadStatus', 'PANSS_Total',
                  'LeadStatus_Assign to CS', 'LeadStatus_Flagged', 'LeadStatus_Passed',
                  'P3','P4','P5','P7','N1','N4','N6','N7','G1','G2','G3','G4','G5','G6',
                  'G7','G8','G10','G11','G12','G13','G14', "pos", "neg", "gen", "RaterID", "SiteID"]
-featToexclude = ['Study', 'Country', 'AssessmentID','LeadStatus',
+featToexclude = ['Study', 'Country', 'AssessmentID','LeadStatus', 'PANSS_Total',
                  'LeadStatus_Assign to CS', 'LeadStatus_Flagged', 'LeadStatus_Passed',
-                 "pos", "neg", "gen"]
+                 "pos", "neg", "gen", "RaterID", "SiteID"]
 
-features = ['P1','P2','P3','P4','P5','P6','P7','N1','N2','N3','N4','N5','N6','N7',
-                 'G1','G2','G3','G4','G5','G6','G7','G8','G9','G10','G11','G12','G13',
-                 'G14','G15','G16', 'PANSS_Total']
+features = ['P1','P2','P3', 'P4', 'P5','P6','P7','N1','N2','N3','N4','N5','N6','N7',
+            'G1','G2','G4','G3','G4','G5','G6','G7','G8','G9', 'G10','G11','G12','G13',
+            'G14','G15','G16']
 
-# predict("models/xgb", "wPanssScore", features, study_E, featToexclude)
+# predict("models/xgb", "", features, study_E, featToexclude, False)
+# ensembling(["", "tuned_alltrain"], features, featToexclude, study_E)
 
-forecast(studies, featToexclude, "wPanssScore", True, False)
+forecast(studies, featToexclude, "tuned_X", True, False, False, False)
 
 
 featToexclude = ['Study', 'Country']
-classification(studies, featToexclude)
+# classification(studies, featToexclude)
