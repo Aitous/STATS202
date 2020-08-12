@@ -41,6 +41,7 @@ from sklearn.model_selection import GridSearchCV
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import ElasticNetCV
+from sklearn.linear_model import Lasso
 
 warnings.filterwarnings("ignore")
 
@@ -48,58 +49,62 @@ warnings.filterwarnings("ignore")
 def drug_eff(studies, verbose = True, plot= True):
     study = studies[0].study
     name = "drugg_effect_model_summary_study_"+ studies[0].name
-    plot = "study_"+ studies[0].name
+    plotname = "study_"+ studies[0].name
     if(len(studies) > 1):
         for st in studies[1:]:
               study = pd.concat([study, st.study])
-        name = "drugg_effect_model_summary_all_studies.txt"
-        plot = "all studies"
-
-    passed = study[study["LeadStatus"] == 'Passed']
-    #Testing the drug effect doing some statistical analysis:
-    model = ols(formula = "PANSS_Total ~ VisitDay + TxGroup + VisitDay:TxGroup", data = passed).fit()
-    ols_summary = model.summary() 
-    with open(name + ".txt", "w") as f:
-        f.write(ols_summary.as_text())
-    if verbose:
-        print(ols_summary)
-
-    #Testing quadratic relation:
-    polynomial_features = PolynomialFeatures(degree=2)
-    x = passed[["VisitDay", "TxGroup"]]
-    xp = polynomial_features.fit_transform(x)
-    model_quad = sm.OLS(passed["PANSS_Total"], xp).fit()
-    ols_summary = model_quad.summary() 
-    with open(name + "_quad.txt", "w") as f:
-        f.write(ols_summary.as_text())
-    if verbose:
-        print(ols_summary)
+        name = "drugg_effect_model_summary_all_studies"
+        plotname = "all studies"
+    if "LeadStatus" in study.columns:
+        mean = study["numVisit"].mean()
+        passed = study[(study["LeadStatus"] == 'Passed')]
+        #Testing the drug effect doing some statistical analysis:
+        model = ols(formula = "PANSS_Total ~ VisitDay + VisitDay:TxGroup", data = passed).fit()
+        ols_summary = model.summary() 
+        with open(name + ".txt", "w") as f:
+            f.write(ols_summary.as_text())
+        if verbose:
+            print(ols_summary)
     
-    #only choosing the passed assessments
-    grp = passed.pivot_table(index='VisitDay',columns='TxGroup',aggfunc=np.mean)
+        #Testing quadratic relation:
+        # polynomial_features = PolynomialFeatures(degree=2)
+        # x = passed[["VisitDay", "TxGroup"]]
+        # xp = polynomial_features.fit_transform(x)
+        # model_quad = sm.OLS(passed["PANSS_Total"], xp).fit()
+        model_quad = ols(formula = "PANSS_Total ~ np.power(VisitDay,2) + np.power(VisitDay,2):TxGroup",
+                                     data = passed).fit()
+        ols_summary = model_quad.summary() 
+        with open(name + "_quad.txt", "w") as f:
+            f.write(ols_summary.as_text())
+        if verbose:
+            print(ols_summary)
     
-    panss = grp["PANSS_Total"]
-    panss.fillna(method='bfill',inplace=True)
-    win = 10
-    MA = panss.rolling(window=win).mean()
-    if plot:
-        fig, ax = plt.subplots(1,2,figsize=(16,7))
+        #only choosing the passed assessments
+        grp = passed.pivot_table(index='VisitDay',columns='TxGroup',aggfunc=np.mean)
         
-        ax[0].plot(panss.index, panss[0], '--m', label = 'Control')
-        ax[0].plot(panss.index, panss[1], '--y', label = 'Treatment')
-        ax[0].set_xlabel("VisitDay")
-        ax[0].set_ylabel("Mean PANSS score")
-        ax[0].set_title("Evolution of mean PANSS score with VisitDay for both groups " + plot)
-        ax[0].legend()
-        
-        ax[1].plot(panss.index, MA[0], '--m', label = 'Control')
-        ax[1].plot(panss.index, MA[1], '--y', label = 'Treatment')
-        ax[1].set_xlabel("VisitDay")
-        ax[1].set_ylabel("Moving average (w="+str(win)+") PANSS score")
-        ax[1].set_title("Evolution of MA (w="+str(win)+") PANSS score with VisitDay for both groups " + plot)
-        ax[1].legend()
-        
-        plt.show() 
+        panss = grp["PANSS_Total"]
+        panss.fillna(method='bfill',inplace=True)
+        win = 10
+        MA = panss.rolling(window=win).mean()
+        if plot:
+            fig, ax = plt.subplots(1,2,figsize=(16,7))
+            
+            ax[0].plot(panss.index, panss[0], '--m', label = 'Control')
+            ax[0].plot(panss.index, panss[1], '--y', label = 'Treatment')
+            ax[0].set_xlabel("VisitDay")
+            ax[0].set_ylabel("Mean PANSS score")
+            ax[0].set_title("Evolution of mean PANSS score with VisitDay for both groups " + plotname)
+            ax[0].legend()
+            
+            ax[1].plot(panss.index, MA[0], '--m', label = 'Control')
+            ax[1].plot(panss.index, MA[1], '--y', label = 'Treatment')
+            ax[1].set_xlabel("VisitDay")
+            ax[1].set_ylabel("Moving average (w="+str(win)+") PANSS score")
+            ax[1].set_title("Evolution of MA (w="+str(win)+") PANSS score with VisitDay for both groups " + plotname)
+            ax[1].legend()
+            
+            plt.savefig("Plots/"+name, bbox_inches = 'tight', pad_inches = 0)
+            plt.show() 
     
 def kmeans(data, features, num_clusters):
     X = data.loc[:, features]
@@ -108,7 +113,8 @@ def kmeans(data, features, num_clusters):
         plt.scatter(X[features[0]], X[features[1]], c=y_pred)
         plt.xlabel(features[0])
         plt.ylabel(features[1])
-        plt.title("Clustering based on " + features[0] + " and " + features[1])  
+        plt.title("Clustering based on " + features[0] + " and " + features[1]) 
+        plt.savefig("Plots/Clustering based on " + features[0] + " and " + features[1], bbox_inches = 'tight', pad_inches = 0)
         plt.show()
     else:
         fig = plt.figure(1)
@@ -119,6 +125,8 @@ def kmeans(data, features, num_clusters):
         ax.set_ylabel(features[1])
         ax.set_zlabel(features[2])
         ax.set_title("Clustering based on " + features[0] + "," + features[1] + " and " + features[2])  
+        plt.savefig("Plots/Clustering based on " + features[0] + "," + features[1] + " and " + features[2],
+                        bbox_inches = 'tight', pad_inches = 0)
         plt.show()  
 
 def classify(studies, k):
@@ -189,11 +197,18 @@ def classify(studies, k):
     #SiteID effect on total score:
     kmeans(study, ['SiteID', 'PANSS_Total'], num_clusters = k)
         
-def forecast(studies, featToexclude, mdName, granular=True, pca=False, alltrain = False, allstudies = False):
-    study = studies[0].study
+def forecast(studies, featToexclude, mdName, granular=True, pca=False,
+             alltrain = False, allstudies = False, featEng = False):
+    study = studies[0].study_ewm if featEng else studies[0].study
     for st in studies[1:]:
-        study = pd.concat([study, st.study])
-    study = studies[-1].study if not allstudies else study
+        if featEng:
+            study = pd.concat([study, st.study_ewm])
+        else:
+            study = pd.concat([study, st.study])
+    if featEng:
+        study = studies[-1].study_ewm if not allstudies else study
+    else:
+        study = studies[-1].study if not allstudies else study
     sorted_data = study.sort_values(by = ['PatientID', 'VisitDay'])
     train_X = sorted_data.loc[:,
                  ~study.columns.isin(featToexclude)]
@@ -257,41 +272,42 @@ def forecast(studies, featToexclude, mdName, granular=True, pca=False, alltrain 
         for feat in features:
             print("================================================================")
             print("Training the model for "+ feat)
-            params = {'evalMetric':'rmse'}
+            params = {'evalMetric':'rmse', 'silent':1}
             xgbr = xgb.XGBRegressor(**params)
             parameters = {
                       'objective':['reg:squarederror'],
                       'learning_rate': [.01], #so called `eta` value
                       'max_depth': [1],
-                      'min_child_weight': [6],
-                      'subsample': [0.7],
-                      'colsample_bytree': [0.7],
-                      'n_estimators': [800],
-                      'gamma': [0.0, 0.1, 0.2 , 0.3, 0.4],
-                      'reg_alpha': [0.005, 0.01, 0.05, 0.1], 
-                      'verbose': [0]}
+                      'min_child_weight': [5],
+                      'subsample': [0.8],
+                      'colsample_bytree': [0.85],
+                      'n_estimators': [700],
+                      'gamma': [0.0, 0.2, 0.5, 1., 5],
+                      'reg_alpha': [0.005, 0.01, 0.1, 1], 
+                      'verbosity': [0]}
             xgbr_grid = GridSearchCV(xgbr,
                                 parameters,
-                                cv = 5, 
+                                cv = 3, 
                                 refit = True,
                                 verbose = False)
-            xgbr_grid.fit(train_X, train_ys[feat], early_stopping_rounds=20,
-                          eval_set=[(train_X, train_ys[feat]), (test_X, test_ys[feat])])
+            # , early_stopping_rounds=10,
+            #               eval_set=[(train_X, train_ys[feat]), (test_X, test_ys[feat])]
+            xgbr_grid.fit(train_X, train_ys[feat])
             xgbr = xgbr_grid.best_estimator_
             models[feat] = xgbr
             pickle.dump(xgbr, open("models/xgb_" + feat + "_" + mdName + ".dat", "wb"))
             
-            results = xgbr.evals_result()
-            epochs = len(results['validation_0']['rmse'])
-            x_axis = range(0, epochs)
-            # plot log loss
-            fig, ax = plt.subplots()
-            ax.plot(x_axis, results['validation_0']['rmse'], label='Train')
-            ax.plot(x_axis, results['validation_1']['rmse'], label='Test')
-            ax.legend()
-            plt.ylabel('rmse')
-            plt.title('XGBoost rmse')
-            plt.savefig("models/xgb_" + feat + "_" + mdName)
+            # results = xgbr.evals_result()
+            # epochs = len(results['validation_0']['rmse'])
+            # x_axis = range(0, epochs)
+            # # plot log loss
+            # fig, ax = plt.subplots()
+            # ax.plot(x_axis, results['validation_0']['rmse'], label='Train')
+            # ax.plot(x_axis, results['validation_1']['rmse'], label='Test')
+            # ax.legend()
+            # plt.ylabel('rmse')
+            # plt.title('XGBoost rmse')
+            # plt.savefig("models/xgb_" + feat + "_" + mdName)
             # plt.show()
         #predicting:
         if not alltrain:
@@ -304,6 +320,8 @@ def forecast(studies, featToexclude, mdName, granular=True, pca=False, alltrain 
             
             
     if not granular:  
+        print("================================================================")
+        print("Training the model:")
         params = {'evalMetric': 'rmse'}
         xgbr = xgb.XGBRegressor(**params)
         parameters = {
@@ -313,16 +331,17 @@ def forecast(studies, featToexclude, mdName, granular=True, pca=False, alltrain 
                       'min_child_weight': [6],
                       'subsample': [0.7],
                       'colsample_bytree': [0.7],
-                      'n_estimators': [800],
-                      'gamma': [0.0, 0.1, 0.2 , 0.3, 0.4 ],
-                      'reg_alpha': [0.005, 0.01, 0.05, 0.1],
+                      'n_estimators': [600],
+                      'gamma': [0.0, 0.25, 0.5, 1, 5],
+                      'reg_alpha': [0.005, 0.01, 0.1, 1],
                       'verbose': [0]}
         xgbr_grid = GridSearchCV(xgbr,
                             parameters,
-                            cv = 5,
+                            cv = 3,
                             verbose=False, 
                             refit = True)
-        xgbr_grid.fit(train_X, train_y)
+        xgbr_grid.fit(train_X, train_y, early_stopping_rounds=10,
+                          eval_set=[(train_X, train_y), (test_X, test_y)])
         xgbr = xgbr_grid.best_estimator_
         print(xgbr_grid.best_score_)
         print(xgbr_grid.best_params_)
@@ -331,8 +350,11 @@ def forecast(studies, featToexclude, mdName, granular=True, pca=False, alltrain 
         if not alltrain:
             pred_y_ts = xgbr.predict(test_X)
             score_ts = xgbr.score(test_X, test_y.PANSS_Total)
+            print("Test " + params["evalMetric"] + " score: " + str(score_ts))
         pred_y_tr = xgbr.predict(train_X)
         score_tr = xgbr.score(train_X, train_y)
+        print("Training " + params["evalMetric"] + " score: " + str(score_tr))
+        
         
         
     print("Training error: ")
@@ -346,7 +368,7 @@ def forecast(studies, featToexclude, mdName, granular=True, pca=False, alltrain 
     
           
     #testing on Study_E:
-    studyE = studies[-1].study
+    studyE = studies[-1].study_ewm  if featEng else studies[-1].study      
     sorted_data = studyE.sort_values(by = ['PatientID', 'VisitDay'])
     test_X_E = sorted_data.loc[:, ~studyE.columns.isin(featToexclude)]
     test_X_E.drop_duplicates(keep='last', subset=['PatientID'], inplace= True)  
@@ -365,7 +387,7 @@ def forecast(studies, featToexclude, mdName, granular=True, pca=False, alltrain 
         pred_y_E = np.zeros(len(test_X_E))
         for feat in features:
             pred_y_E += models[feat].predict(test_X_E)
-    results = pd.DataFrame({"PatientID": patientsID_E, "PANSS_Total": pred_y_E})
+    results = pd.DataFrame({"PatientID": patientsID_E.astype(int), "PANSS_Total": pred_y_E})
     results.to_csv("submission_PANSS_"+ mdName +".csv", index=False)
     
 def predict(file, mdName, features, study, featToexclude, oneModel):
@@ -385,7 +407,6 @@ def predict(file, mdName, features, study, featToexclude, oneModel):
     test_y = pd.read_csv("test_y_"+ mdName +".csv").PANSS_Total
     train_y = pd.read_csv("train_y_"+ mdName +".csv").PANSS_Total
     
-    # test_X_E = pd.read_csv("test_X_E"+ mdName +".csv")
     pred_y_ts = np.zeros(len(test_X))
     pred_y_tr = np.zeros(len(train_X))
     for feat in features:
@@ -402,12 +423,12 @@ def predict(file, mdName, features, study, featToexclude, oneModel):
         
         
     #Forecasting:
-    studyE = study.sum_feat
+    studyE = study.study_ewm
     sorted_data = studyE.sort_values(by = ['PatientID', 'VisitDay'])
     temp = sorted_data.loc[:, ~studyE.columns.isin(featToexclude)]
     temp.drop_duplicates(keep='last', subset=['PatientID'], inplace= True)  
     patientsID_E = temp["PatientID"]
-    test_X_E = pd.read_csv("test_X_E_tuned.csv")
+    test_X_E = pd.read_csv("test_X_Eno_feat_eng_alltrain_woPanss.csv")
     
     if mdName == "PCA":
         pca = PCA(n_components=5)
@@ -418,7 +439,7 @@ def predict(file, mdName, features, study, featToexclude, oneModel):
     pred_y_E = np.zeros(len(test_X_E))
     for feat in features:
         pred_y_E += models[feat].predict(test_X_E)
-    results = pd.DataFrame({"PatientID": patientsID_E, "PANSS_Total": pred_y_E})
+    results = pd.DataFrame({"PatientID": patientsID_E.astype(int), "PANSS_Total": pred_y_E})
     results.to_csv("submission_PANSS_"+ mdName +".csv", index=False)
     return results
 
@@ -432,16 +453,25 @@ def ensembling(models, features, featuresToexclude, study_E):
         pred_y_E += results[mdName].PANSS_Total
     pred_y_E /= (len(models))
     
-    results = pd.DataFrame({"PatientID": PatientID_E, "PANSS_Total": pred_y_E})
+    results = pd.DataFrame({"PatientID": PatientID_E.astype(int), "PANSS_Total": pred_y_E})
     results.to_csv("submission_PANSS_Ensemble.csv", index=False)
     
     
     
-def forcaast_LR(studies, featToexclude, mdName): 
-    study = studies[0].sum_feat
+def forcaast_LR(studies, featToexclude, mdName, featEng = True,
+                                    allstudies = False, alltrain = True, granular = True): 
+    study = studies[0].study_ewm if featEng else studies[0].study
     for st in studies[1:]:
-        study = pd.concat([study, st.sum_feat])
-    study = studies[-1].sum_feat
+        if featEng:
+            study = pd.concat([study, st.study_ewm])
+        else:
+            study = pd.concat([study, st.study])
+            
+    if featEng:
+        study = studies[-1].study_ewm if not allstudies else study
+    else:
+        study = studies[-1].study if not allstudies else study
+        
     sorted_data = study.sort_values(by = ['PatientID', 'VisitDay'])
     train_X = sorted_data.loc[:,
                  ~study.columns.isin(featToexclude)]
@@ -453,79 +483,111 @@ def forcaast_LR(studies, featToexclude, mdName):
     train_y = train_y[duplicate == True]
     train_ys = sorted_data[duplicate == True]
     
-    duplicate = train_X.duplicated(keep='last', subset=['PatientID'])  
-    test_X = train_X[duplicate == False]
-    train_X = train_X[duplicate == True]
-    
-    duplicate = train_y.duplicated(keep='first', subset=['PatientID'])  
-    test_y = train_y[duplicate == False]
-    train_y = train_y[duplicate == True]
-    test_ys = train_ys[duplicate == False]
-    train_ys = train_ys[duplicate == True]
-
-    
-    train_X.drop('PatientID', axis=1, inplace = True)
-    train_y.drop('PatientID', axis=1, inplace = True)
+    if not alltrain:
+        duplicate = train_X.duplicated(keep='last', subset=['PatientID'])  
+        test_X = train_X[duplicate == False]
+        train_X = train_X[duplicate == True]
+        
+        duplicate = train_y.duplicated(keep='first', subset=['PatientID'])  
+        test_y = train_y[duplicate == False]
+        train_y = train_y[duplicate == True]
+        test_ys = train_ys[duplicate == False]
+        train_ys = train_ys[duplicate == True]
+    else:
+        duplicate = train_X.duplicated(keep='last', subset=['PatientID'])  
+        test_X = train_X[duplicate == False]
+        
+        duplicate = train_y.duplicated(keep='first', subset=['PatientID'])  
+        test_y = train_y[duplicate == False]
+        test_ys = train_ys[duplicate == False]
+        
     test_X.drop('PatientID', axis=1, inplace = True)
     test_y.drop('PatientID', axis=1, inplace = True)
+    train_X.drop('PatientID', axis=1, inplace = True)
+    train_y.drop('PatientID', axis=1, inplace = True)
     
-    #saving test df:
-    train_X.to_csv("train_X_"+ mdName +".csv")        
-    train_y.to_csv("train_y_"+ mdName +".csv")
-    test_X.to_csv("test_X_"+ mdName +".csv")    
-    test_y.to_csv("test_y_"+ mdName +".csv")
+    #saving training df:
+    train_X.to_csv("train_X_"+ mdName +".csv", index=False)        
+    train_y.to_csv("train_y_"+ mdName +".csv", index=False)
+    test_X.to_csv("test_X_"+ mdName +".csv", index=False)    
+    test_y.to_csv("test_y_"+ mdName +".csv", index=False)
     
     models = {}
     features = ['P1','P2','P3','P4','P5','P6','P7','N1','N2','N3','N4','N5','N6','N7',
                  'G1','G2','G3','G4','G5','G6','G7','G8','G9','G10','G11','G12','G13',
                  'G14','G15','G16']
+    if granular:
+        for feat in features:
+            print("================================================================")
+            print("Training the model for " + feat)
+            parameters = {'alpha': np.logspace(-2, 3, 20)}
+            reg = ElasticNetCV(l1_ratio=1, alphas=parameters['alpha'],
+                                     fit_intercept = True, cv=5)
     
-    for feat in features:
+            reg.fit(train_X, train_ys[feat])
+            models[feat] = reg
+            pickle.dump(reg, open("models/xgb_" + feat + "_" + mdName + ".dat", "wb"))
+        #predicting:
+        if not alltrain:
+            pred_y_ts = np.zeros(len(test_X))
+        pred_y_tr = np.zeros(len(train_X))
+        for feat in features:
+            if not alltrain:
+                pred_y_ts += models[feat].predict(test_X)
+            pred_y_tr += models[feat].predict(train_X)
+        
+    if not granular:  
         print("================================================================")
-        print("Training the model for " + feat)
+        print("Training the model:")
         parameters = {'alpha': np.logspace(-2, 3, 20)}
-        ridge_reg = ElasticNetCV(l1_ratio=0, alphas=parameters['alpha'], fit_intercept = True, cv=5)
+        reg = ElasticNetCV(l1_ratio=1, alphas=parameters['alpha'],
+                           fit_intercept = True, cv=5)
 
-        ridge_reg.fit(train_X, train_y)
-        models[feat] = ridge_reg
-        pickle.dump(ridge_reg, open("models/xgb_" + feat + "_" + mdName + ".dat", "wb"))
-    #predicting:
-    pred_y_ts = np.zeros(len(test_X))
-    pred_y_tr = np.zeros(len(train_X))
-    for feat in features:
-        pred_y_ts += models[feat].predict(test_X)
-        pred_y_tr += models[feat].predict(train_X)
-
+        reg.fit(train_X, train_y)
+        models = reg
+        pickle.dump(reg, open("models/xgb_" + mdName + ".dat", "wb"))
+        #predicting:
+        if not alltrain:
+            pred_y_ts = reg.predict(test_X)
+            score_ts = reg.score(test_X, test_y.PANSS_Total)
+        pred_y_tr = reg.predict(train_X)
+        score_tr = reg.score(train_X, train_y)
+        
     print("Training error: ")
     print("With round: " + str(np.mean((train_y.values - np.round(pred_y_tr))**2)))
     print("Without round: " + str(np.mean((train_y.values - pred_y_tr)**2)))    
     
+    if not alltrain:
+        print("Test error:")
+        print("With round: " + str(np.mean((test_y.values - np.round(pred_y_ts))**2)))
+        print("Without round: " + str(np.mean((test_y.values - pred_y_ts)**2)))
     
-    print("Test error:")
-    print("With round: " + str(np.mean((test_y.values - np.round(pred_y_ts))**2)))
-    print("Without round: " + str(np.mean((test_y.values - pred_y_ts)**2)))
+    
         
         
     #Forecasting:
-    studyE = study.sum_feat
+    studyE = studies[-1].study_ewm
     sorted_data = studyE.sort_values(by = ['PatientID', 'VisitDay'])
     test_X_E = sorted_data.loc[:, ~studyE.columns.isin(featToexclude)]
     test_X_E.drop_duplicates(keep='last', subset=['PatientID'], inplace= True)  
     patientsID_E = test_X_E["PatientID"]
     test_X_E.drop('PatientID', axis=1, inplace = True)
 
-    pred_y_E = np.zeros(len(test_X_E))
-    for feat in features:
-        pred_y_E += models[feat].predict(test_X_E)
-    results = pd.DataFrame({"PatientID": patientsID_E, "PANSS_Total": pred_y_E})
+    if not granular:
+        pred_y_E = models.predict(test_X_E)
+    else:
+        pred_y_E = np.zeros(len(test_X_E))
+        for feat in features:
+            pred_y_E += models[feat].predict(test_X_E)
+    results = pd.DataFrame({"PatientID": patientsID_E.astype(int), "PANSS_Total": pred_y_E})
     results.to_csv("submission_PANSS_"+ mdName +".csv", index=False)
 
     
 def classification(studies, featToexclude):
     target = 'LeadStatus'
-    study = studies[0].sum_feat
+    study = studies[0].study_ewm
     for st in studies[1:-1]:
-        study = pd.concat([study, st.sum_feat])
+        study = pd.concat([study, st.study_ewm])
     train_X = study.loc[:, ~study.columns.isin(featToexclude)]
     
     train_y = study[[target, 'PatientID']]
@@ -552,7 +614,7 @@ def classification(studies, featToexclude):
     
           
     #testing on Study_E:
-    studyE = studies[-1].sum_feat
+    studyE = studies[-1].study_ewm
     test_X_E = studyE.loc[:, ~studyE.columns.isin(featToexclude)]
     AssessmentID = studyE['AssessmentID']
     test_X_E.drop(['PatientID', 'AssessmentID'], axis=1, inplace = True)
@@ -563,15 +625,11 @@ def classification(studies, featToexclude):
     pred_y_tr = xgbc.predict(train_X)
     
     print("Training results:")
-    print(train_y)
-    print(pred_y_tr)
     print(metrics.classification_report(train_y, pred_y_tr))
     print(metrics.confusion_matrix(train_y, pred_y_tr))
     
     
     print("Test results:")
-    print(test_y)
-    print(pred_y_ts)
     print(metrics.classification_report(test_y, pred_y_ts))
     print(metrics.confusion_matrix(test_y, pred_y_ts))
     
@@ -637,6 +695,7 @@ class Study(object):
     #Histograms of the data:
     if plot:
         self.study.hist(figsize=(20,20))
+        plt.savefig("Plots/hist_study_"+self.name, bbox_inches = 'tight', pad_inches = 0)
     
     #Describing the data:
     if verbose:
@@ -667,32 +726,44 @@ class Study(object):
     # scatter_matrix(self.study.loc[:, ~self.study.columns.isin(excluded_col)], figsize = (20,20))
     
     #corr matrix:
-    corr_matrix = self.study.corr()
-    
-    corr = corr_matrix['PANSS_Total']
-    ind = corr.index
-    corr = corr[ind != 'PANSS_Total']
-    corr = corr.sort_values(ascending = True)
-    if plot:
-        xs = corr.plot.barh()
-        fig, ax = plt.subplots(figsize=(10,30))
-        ax = corr.plot.barh(color = 'gold')
-        ax.set_xlabel("Correlation coefficient")
-        ax.set_title("Correlation coefficient of the variables")
-        plt.show()
+    if self.name != 'E':
+        ohe_df = pd.get_dummies(self.study.LeadStatus, prefix='LeadStatus')
+        ohe_df.reset_index(drop=True, inplace=True)
+        self.study.reset_index(drop=True, inplace=True)
+        data = pd.concat([self.study, ohe_df], axis=1).drop(['LeadStatus'], axis=1)
+        self.study_ohe = data
+        targets = ['LeadStatus_Assign to CS', 'LeadStatus_Flagged', 'LeadStatus_Passed', 'PANSS_Total']
+    else:
+        self.study_ohe = self.study
+        targets = ['PANSS_Total']
+    corr_matrix = self.study_ohe.corr()
+    for target in targets:
+        if target in corr_matrix.columns:
+            corr = corr_matrix[target]
+            ind = corr.index
+            corr = corr[ind != target]
+            corr = corr.sort_values(ascending = True)
+            if plot:
+                xs = corr.plot.barh()
+                fig, ax = plt.subplots(figsize=(10,30))
+                ax = corr.plot.barh(color = 'gold')
+                ax.set_xlabel("Correlation coefficient")
+                ax.set_title("Correlation coefficient of the variables")
+                plt.savefig("Plots/" +target + "_correlation_w_predictors_study_" + self.name,
+                            bbox_inches = 'tight', pad_inches = 0)
+                plt.show()
+            #Heatmap for important variables:
+            num_impFeat = 4
+            ind_imp = corr.abs().sort_values(ascending=False).index[0:num_impFeat]
+            corr_imp = corr_matrix.loc[ind_imp, ind_imp]
+            if corr_imp.size != 0 and plot:
+                fig, ax = plt.subplots(figsize=(17,17))  
+                sns.heatmap(corr_imp, vmax = 1)
+                plt.title("Important variables correlation map" , fontsize=15)
+                plt.savefig("Plots/Heatmap_imp_predictors_"+ target +"_study_" + self.name, bbox_inches = 'tight', pad_inches = 0)
+                plt.show()
+                    
     corr_matrix.to_csv("corr_matrix_study_"+self.name+".csv")
-    
-    #Heatmap for important variables:
-    corr_limit = 0.6
-    ind_imp = corr.index[(corr >= corr_limit) | (corr<= -corr_limit)] 
-    corr_imp = corr_matrix.loc[ind_imp, ind_imp]
-    if corr_imp.size != 0 and plot:
-        fig, ax = plt.subplots(figsize=(17,17))  
-        sns.heatmap(corr_imp, vmax = 1)
-        plt.title("Important variables correlation map", fontsize=15)
-        plt.show()
-    
-    
         
     #important parameters using randomForest, boosting,...:
     #encoding the LeadStatus variable:
@@ -718,7 +789,8 @@ class Study(object):
         if plot:
             fig, ax = plt.subplots(figsize=(12,18))
             xgb.plot_importance(model, max_num_features=50, height=0.8, ax=ax)
-            plt.title("feature importance study " + self.name)
+            plt.title("XGBoost feature importance study " + self.name)
+            plt.savefig("Plots/XGboost_imp_predictors_study_" + self.name, bbox_inches = 'tight', pad_inches = 0)
             plt.show()
         
     
@@ -728,6 +800,8 @@ class Study(object):
         if plot:
             fig, ax2 = plt.subplots(figsize=(12,18))
             ax2.barh([train_df.columns[x] for x in range(len(importance))], importance)
+            plt.title("RF feature importance study " + self.name)
+            plt.savefig("Plots/RF_imp_predictors_study_" + self.name, bbox_inches = 'tight', pad_inches = 0)
             plt.show()
         
         
@@ -764,6 +838,13 @@ class Study(object):
     new_feat = pd.concat([new_feat, vis],axis = 1)
     self.sum_feat = new_feat
 
+    com = 1e-2
+    self.study_ewm = pd.DataFrame(columns = new_feat.columns)
+    new_feat = new_feat.sort_values(by = ["PatientID", 'VisitDay'])
+    for pt in new_feat["PatientID"].unique():
+        self.study_ewm = pd.concat([self.study_ewm, 
+                                    new_feat[new_feat["PatientID"] == pt].ewm(com=com).mean()])
+        
   def drug_effect(self, verbose = True, plot= True):
     """
     Verifying the drug effect.
@@ -842,40 +923,40 @@ class Study(object):
 
 study_A = Study(name = 'A')
 study_A.preprocess(False, False, False)
-# study_A.drug_effect(False, False)
-# study_A.classify_patients()
-# study_A.umap()
+# study_A.drug_effect(True, True)
+study_A.classify_patients()
+study_A.umap()
 
 
 study_B = Study(name = 'B')
-study_B.preprocess(False, False, False)
-# study_B.drug_effect(False, False)
-# study_B.classify_patients()
+study_B.preprocess(False,False, False)
+# study_B.drug_effect(True, True)
+study_B.classify_patients()
 
 study_C = Study(name = 'C')
 study_C.preprocess(False, False, False)
-# study_C.drug_effect(False, False)
-# study_C.classify_patients()
+# study_C.drug_effect(True, True)
+study_C.classify_patients()
 
 study_D = Study(name = 'D')
 study_D.preprocess(False, False, False)
-# study_D.drug_effect(False, False)
-# study_D.classify_patients()
+# study_D.drug_effect(True, True)
+study_D.classify_patients()
 
 study_E = Study(name = 'E')
 study_E.preprocess(False, False, False)
-# study_E.drug_effect(False, False)
-# study_E.classify_patients()
+# study_E.drug_effect(True, True)
+study_E.classify_patients()
 
 studies = [study_A, study_B, study_C, study_D, study_E]
 # studies = [study_A, study_B, study_C, study_D]
-# drug_eff(studies)
+drug_eff(studies[:-1])
 
 featToexclude = ['Study', 'Country', 'AssessmentID','LeadStatus', 'PANSS_Total',
                  'LeadStatus_Assign to CS', 'LeadStatus_Flagged', 'LeadStatus_Passed',
                  'P3','P4','P5','P7','N1','N4','N6','N7','G1','G2','G3','G4','G5','G6',
                  'G7','G8','G10','G11','G12','G13','G14', "pos", "neg", "gen", "RaterID", "SiteID"]
-featToexclude = ['Study', 'Country', 'AssessmentID','LeadStatus', 'PANSS_Total',
+featToexclude = ['Study', 'Country', 'AssessmentID','LeadStatus','PANSS_Total',
                  'LeadStatus_Assign to CS', 'LeadStatus_Flagged', 'LeadStatus_Passed',
                  "pos", "neg", "gen", "RaterID", "SiteID"]
 
@@ -883,11 +964,43 @@ features = ['P1','P2','P3', 'P4', 'P5','P6','P7','N1','N2','N3','N4','N5','N6','
             'G1','G2','G4','G3','G4','G5','G6','G7','G8','G9', 'G10','G11','G12','G13',
             'G14','G15','G16']
 
-# predict("models/xgb", "", features, study_E, featToexclude, False)
-# ensembling(["", "tuned_alltrain"], features, featToexclude, study_E)
+# predict("models/xgb", "no_feat_eng_alltrain_woPanss", features, study_E, featToexclude, oneModel = 0)
+# ensembling(["feat_eng_alltrain_X", "feat_eng_alltrain_woPanss"], features, featToexclude, study_E)
 
-forecast(studies, featToexclude, "tuned_X", True, False, False, False)
+# forecast(studies, featToexclude, "feat_eng_alltrain_X", granular = True, pca = False,
+#                 alltrain = True, allstudies = False, featEng = True)
 
-
+# forcaast_LR(studies, featToexclude, "LR_feat_eng_alltrain_woPanss", featEng = True,
+#                                     allstudies = False, alltrain = True, granular=False)
 featToexclude = ['Study', 'Country']
 # classification(studies, featToexclude)
+
+# study= study_A.study
+# for st in studies[1:]:
+#     study = pd.concat([study, st.study])
+# study.hist(figsize=(20,20))
+# plt.savefig("Plots/hist_study_allstudies", bbox_inches = 'tight', pad_inches = 0)
+
+# study = study_A.study
+# for st in studies[1:-1]:
+#     study = pd.concat([study, st.study])
+# ohe_df = pd.get_dummies(study.LeadStatus, prefix='LeadStatus')
+# ohe_df.reset_index(drop=True, inplace=True)
+# study.reset_index(drop=True, inplace=True)
+# data = pd.concat([study, ohe_df], axis=1).drop(['LeadStatus'], axis=1)
+# study_ohe = data
+# targets = ['LeadStatus_Assign to CS', 'LeadStatus_Flagged', 'LeadStatus_Passed']
+# corr_matrix = study_ohe.corr()
+# for target in targets:
+#     corr = corr_matrix[target]
+#     ind = corr.index
+#     corr = corr[ind != target]
+#     corr = corr.sort_values(ascending = True)
+
+#     xs = corr.plot.barh()
+#     fig, ax = plt.subplots(figsize=(10,30))
+#     ax = corr.plot.barh(color = 'gold')
+#     ax.set_xlabel("Correlation coefficient")
+#     ax.set_title("Correlation coefficient of the variables")
+#     plt.show()
+#     plt.savefig("Plots/" +target + "_correlation_w_predictors", bbox_inches = 'tight', pad_inches = 0)
