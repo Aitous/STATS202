@@ -1,0 +1,26 @@
+                            OLS Regression Results                            
+==============================================================================
+Dep. Variable:            PANSS_Total   R-squared:                       0.261
+Model:                            OLS   Adj. R-squared:                  0.260
+Method:                 Least Squares   F-statistic:                     260.4
+Date:                Wed, 12 Aug 2020   Prob (F-statistic):           1.34e-97
+Time:                        23:36:50   Log-Likelihood:                -6151.7
+No. Observations:                1479   AIC:                         1.231e+04
+Df Residuals:                    1476   BIC:                         1.233e+04
+Df Model:                           2                                         
+Covariance Type:            nonrobust                                         
+====================================================================================
+                       coef    std err          t      P>|t|      [0.025      0.975]
+------------------------------------------------------------------------------------
+Intercept          101.4164      0.664    152.817      0.000     100.115     102.718
+VisitDay            -0.3110      0.016    -19.246      0.000      -0.343      -0.279
+VisitDay:TxGroup    -0.0067      0.017     -0.398      0.690      -0.040       0.026
+==============================================================================
+Omnibus:                        6.511   Durbin-Watson:                   0.707
+Prob(Omnibus):                  0.039   Jarque-Bera (JB):                6.902
+Skew:                           0.111   Prob(JB):                       0.0317
+Kurtosis:                       3.250   Cond. No.                         90.5
+==============================================================================
+
+Warnings:
+[1] Standard Errors assume that the covariance matrix of the errors is correctly specified.

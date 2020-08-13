@@ -1,0 +1,28 @@
+                            OLS Regression Results                            
+==============================================================================
+Dep. Variable:            PANSS_Total   R-squared:                       0.253
+Model:                            OLS   Adj. R-squared:                  0.253
+Method:                 Least Squares   F-statistic:                     2141.
+Date:                Wed, 12 Aug 2020   Prob (F-statistic):               0.00
+Time:                        23:39:43   Log-Likelihood:                -51887.
+No. Observations:               12637   AIC:                         1.038e+05
+Df Residuals:                   12634   BIC:                         1.038e+05
+Df Model:                           2                                         
+Covariance Type:            nonrobust                                         
+=================================================================================================
+                                    coef    std err          t      P>|t|      [0.025      0.975]
+-------------------------------------------------------------------------------------------------
+Intercept                        73.9453      0.155    476.125      0.000      73.641      74.250
+np.power(VisitDay, 2)            -0.0002   4.72e-06    -49.789      0.000      -0.000      -0.000
+np.power(VisitDay, 2):TxGroup  3.786e-06      6e-06      0.631      0.528   -7.97e-06    1.55e-05
+==============================================================================
+Omnibus:                      216.367   Durbin-Watson:                   0.504
+Prob(Omnibus):                  0.000   Jarque-Bera (JB):              234.896
+Skew:                           0.298   Prob(JB):                     9.84e-52
+Kurtosis:                       3.301   Cond. No.                     5.96e+04
+==============================================================================
+
+Warnings:
+[1] Standard Errors assume that the covariance matrix of the errors is correctly specified.
+[2] The condition number is large, 5.96e+04. This might indicate that there are
+strong multicollinearity or other numerical problems.
